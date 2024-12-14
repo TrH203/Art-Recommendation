@@ -18,6 +18,7 @@ from torchvision import models
 from torch.nn import Sequential
 from torch import nn
 from loguru import logger
+import pickle
 
 logger.info("Running app...")
 # Image preprocessing
@@ -94,7 +95,19 @@ def plot_image(image_path):
     plt.axis('off')  # Hide axes for a cleaner display
     plt.show()
 
-def kmeans(data, k, max_iters=100, tol=1e-4):
+def get_sample(data, ammount = 0.05):
+    # Calculate 10% of the array size
+    sample_size = int(len(data) * ammount)
+
+    # Randomly select indices without replacement
+    random_indices = np.random.choice(len(data), size=sample_size, replace=False)
+
+    # Select the elements corresponding to the random indices
+    random_sample_data = data[random_indices]
+    # random_sample_label = labels[random_indices]
+    return random_sample_data
+    
+def kmeans(data, k, max_iters=200, tol=1e-3):
 
     data = torch.tensor(data)
     n_samples, n_features = data.size()
@@ -126,40 +139,63 @@ def plot_clusters_high_dim(data, labels, centers, n_components=2, title="K-Means
     centers = centers.cpu().numpy()
 
     # Apply PCA
+    data = data[~np.isnan(data).any(axis=1)]
+
     pca = PCA(n_components=n_components)
     reduced_data = pca.fit_transform(data)
     reduced_centers = pca.transform(centers)
 
     # Plot the reduced data
-    if n_components == 2:
-        for i in range(len(centers)):
-            cluster_points = reduced_data[labels == i]
-            plt.scatter(cluster_points[:, 0], cluster_points[:, 1], label=f"Cluster {i+1}")
-        plt.scatter(reduced_centers[:, 0], reduced_centers[:, 1], c='red', marker='x', s=200, label='Centers')
-        plt.xlabel("Principal Component 1")
-        plt.ylabel("Principal Component 2")
-        
-        plt.title(title)
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-    elif n_components == 3:
-        # Create a DataFrame for visualization
-        df = pd.DataFrame(reduced_data, columns=["PC1", "PC2", "PC3"])
-        df['Cluster'] = labels
-        custom_colors = ['red']  # Add as many colors as clusters
-        # Streamlit app
-        st.title("Interactive 3D PCA Visualization")
-        fig = px.scatter_3d(df, x="PC1", y="PC2", z="PC3",
-                            color="Cluster", 
-                            color_discrete_sequence=custom_colors)
-        fig.update_layout(width=1280, height=720)  # Set desired figure size
+    # if n_components == 2:
+    fig, ax = plt.subplots(figsize=(10, 7))  # Create a Matplotlib figure
 
-        st.plotly_chart(fig)
+    for i in range(len(centers)):  # Assuming 3 clusters
+        cluster_points = reduced_data[labels == i]
+        ax.scatter(
+            cluster_points[:, 0], cluster_points[:, 1], label=f"Cluster {i + 1}"
+        )
 
-        
-    else:
-        raise ValueError("n_components must be 2 or 3 for plotting!")
+    # Plot centers
+    ax.scatter(
+        reduced_centers[:, 0],
+        reduced_centers[:, 1],
+        c="red",
+        marker="x",
+        s=200,
+        label="Centers",
+    )
+
+    # Add labels, title, legend, and grid
+    ax.set_xlabel("Principal Component 1")
+    ax.set_ylabel("Principal Component 2")
+    ax.set_title("2D PCA Scatter Plot")
+    ax.legend()
+    ax.grid(True)
+
+    # Display the plot in Streamlit
+    st.pyplot(fig)
+# elif n_components == 3:
+    # Create a DataFrame for visualization
+    df = pd.DataFrame(reduced_data, columns=["PC1", "PC2", "PC3"])
+    df['Cluster'] = labels
+    color_map = {
+        0: "red",
+        1: "blue",
+        2: "green",
+        3: "yello",
+        4: "black",
+    }
+    # Streamlit app
+    st.title("Interactive 3D PCA Visualization")
+    fig = px.scatter_3d(df, x="PC1", y="PC2", z="PC3",
+                        color="Cluster", color_discrete_map=color_map)
+    fig.update_layout(width=1280, height=720)  # Set desired figure size
+
+    st.plotly_chart(fig)
+
+    
+    # else:
+    #     raise ValueError("n_components must be 2 or 3 for plotting!")
     
     
     
@@ -195,14 +231,11 @@ if __name__ == "__main__":
     dataset_path = 'art-images-drawings-painting-sculpture-engraving'
 
     image_paths = []
-
-    # Function to extract features for a dataset
-    for root, _, files in os.walk(dataset_path):  # Use os.walk for recursive traversal
-        print("Checking ",root)
-        for img_name in files:
-            img_path = os.path.join(root, img_name)
-
-            image_paths.append(img_path)
+    
+    with open("image_paths.pkl", "rb") as f:
+        image_paths = pickle.load(f)
+    
+    image_features = get_sample(image_features,0.2)
     
     logger.info("Clustering...")
     k = 5
