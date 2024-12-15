@@ -1,25 +1,129 @@
 import streamlit as st
 from PIL import Image
+import torch
+from torchvision import models, transforms
+from torch import nn
+import pickle
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from tqdm import tqdm
+from PIL import UnidentifiedImageError
 
-# Title of the app
-st.title("Image Upload and Recommedation")
+# Set device to CPU or GPU
+device = "cpu"
 
-# Upload image
+# Define VGG19 model architecture
+vgg19_model = models.vgg19(pretrained=False)
+
+# Load the model state_dict (assuming model.pth is the trained model file)
+model_path = '/home/chucky/PycharmProjects/Art-Recommendation/pages/model.pth'
+state_dict = torch.load(model_path, map_location=device)
+
+# Override last layers
+num_classes = 5
+vgg19_model.classifier[6] = nn.Linear(vgg19_model.classifier[6].in_features, num_classes)
+vgg19_model = vgg19_model.to(device=device)
+
+# Load model weights
+vgg19_model.load_state_dict(state_dict)
+vgg19_model.eval()  # Set model to evaluation mode
+
+# Create a feature extractor from the model's features
+feature_extractor = nn.Sequential(*list(vgg19_model.features.children())).to(device)
+
+# Image preprocessing
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+# Function to extract features from an image
+def extract_features(image_path, feature_extractor, device="cpu"):
+    try:
+        img = Image.open(image_path).convert('RGB')
+        img_tensor = transform(img).unsqueeze(0).to(device)  # Add batch dimension and move to device
+    except UnidentifiedImageError:
+        return None
+    with torch.no_grad():
+        features = feature_extractor(img_tensor)
+    return features.flatten().cpu().numpy()  # Return features on CPU for further processing
+
+# Function to remove duplicate images based on feature similarity
+def remove_duplicates(similar_images, feature_extractor, threshold=1e-6):
+    image_features = []
+    image_paths = []
+    sim_scores = []
+
+    for image_path, sim_score in similar_images:
+        feature = extract_features(image_path, feature_extractor, device="cpu")
+        if feature is not None:
+            image_features.append(feature)
+            image_paths.append(image_path)
+            sim_scores.append(sim_score)
+
+    image_features = np.array(image_features)
+    dup = {}
+    num_images = len(image_paths)
+
+    for i in tqdm(range(num_images)):
+        if image_paths[i] in dup:
+            continue
+        differences = np.sum(np.abs(image_features[i] - image_features[i + 1:]), axis=1)
+        duplicates = np.where(differences <= threshold)[0]
+        for idx in duplicates:
+            dup[image_paths[i + 1 + idx]] = True
+
+    # Filter unique paths and features
+    new_paths = [path for path in image_paths if path not in dup]
+    new_image_features = [image_features[i] for i, path in enumerate(image_paths) if path not in dup]
+    new_sim_score = [sim_scores[i] for i, path in enumerate(image_paths) if path not in dup]
+
+    return [(path, score) for path, score in zip(new_paths, new_sim_score)]
+
+# Function to find similar images based on cosine similarity
+def find_similar_images(query_image_path, image_features, image_paths, feature_extractor, device, top_k=5):
+    query_features = extract_features(query_image_path, feature_extractor, device)
+    if query_features is None:
+        return []
+
+    similarities = cosine_similarity([query_features], image_features)[0]
+    sorted_indices = np.argsort(similarities)[::-1][1:top_k]  # Top-k similar images
+    return [(image_paths[i], similarities[i]) for i in sorted_indices]
+
+# Load image paths and features from pickle and numpy files
+with open('/home/chucky/PycharmProjects/Art-Recommendation/pages/image_paths.pkl', 'rb') as file:
+    image_paths = pickle.load(file)
+
+image_features = np.load("/home/chucky/PycharmProjects/Art-Recommendation/pages/features.npy")
+
+# Streamlit UI
+st.title("Image Upload and Recommendation")
+
+# Image upload widget
 uploaded_image = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_image is not None:
-    # Open and display the uploaded image
+    # Display uploaded image
     image = Image.open(uploaded_image)
 
-    # Layout with two columns
+    # Create layout with two columns
     col1, col2 = st.columns(2)
 
     # Show the uploaded image in the first column
     with col1:
         st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    # Prediction area in the second column (placeholder for now)
+    # Perform image similarity search when the user uploads an image
     with col2:
-        st.write("Recommedation Area")
 
+        query_image_path = "temp_uploaded_image.jpg"
+        image.save(query_image_path)
 
+        # Find the top-k similar images
+        similar_images = find_similar_images(query_image_path, image_features, image_paths, feature_extractor, device, top_k=5)
+        similar_images = remove_duplicates(similar_images, feature_extractor)
+
+        # Display the top-k similar images in the second column
+        for similar_image, sim_score in similar_images[1:]:
+            st.image(similar_image, caption=f"Similarity: {sim_score:.4f}", use_column_width=True)
