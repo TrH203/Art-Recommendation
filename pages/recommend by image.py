@@ -16,7 +16,7 @@ device = "cpu"
 vgg19_model = models.vgg19(pretrained=False)
 
 # Load the model state_dict (assuming model.pth is the trained model file)
-model_path = '/home/chucky/PycharmProjects/Art-Recommendation/pages/model.pth'
+model_path = 'model.pth'
 state_dict = torch.load(model_path, map_location=device)
 
 # Override last layers
@@ -92,13 +92,16 @@ def find_similar_images(query_image_path, image_features, image_paths, feature_e
     return [(image_paths[i], similarities[i]) for i in sorted_indices]
 
 # Load image paths and features from pickle and numpy files
-with open('/home/chucky/PycharmProjects/Art-Recommendation/pages/image_paths.pkl', 'rb') as file:
+with open('image_paths.pkl', 'rb') as file:
     image_paths = pickle.load(file)
 
-image_features = np.load("/home/chucky/PycharmProjects/Art-Recommendation/pages/features.npy")
+image_features = np.load("features.npy")
 
 # Streamlit UI
 st.title("Image Upload and Recommendation")
+
+
+
 
 # Image upload widget
 uploaded_image = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
@@ -106,24 +109,26 @@ uploaded_image = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"]
 if uploaded_image is not None:
     # Display uploaded image
     image = Image.open(uploaded_image)
+    st.image(image, caption="Uploaded Image", use_container_width=1000)
 
-    # Create layout with two columns
-    col1, col2 = st.columns(2)
+    # Save uploaded image for processing
+    query_image_path = "temp_uploaded_image.jpg"
+    image.save(query_image_path)
 
-    # Show the uploaded image in the first column
-    with col1:
-        st.image(image, caption="Uploaded Image", use_column_width=True)
+    # Assume these functions and variables are defined elsewhere
+    # Find the top-k similar images
+    similar_images = find_similar_images(query_image_path, image_features, image_paths, feature_extractor, device, top_k=50)
+    similar_images = remove_duplicates(similar_images, feature_extractor)
 
-    # Perform image similarity search when the user uploads an image
-    with col2:
+    # Display similar images in a grid layout
+    st.markdown("### Similar Images")
 
-        query_image_path = "temp_uploaded_image.jpg"
-        image.save(query_image_path)
+    # Define the number of images per row
+    images_per_row = 5  # Adjust this value based on the desired layout
 
-        # Find the top-k similar images
-        similar_images = find_similar_images(query_image_path, image_features, image_paths, feature_extractor, device, top_k=5)
-        similar_images = remove_duplicates(similar_images, feature_extractor)
-
-        # Display the top-k similar images in the second column
-        for similar_image, sim_score in similar_images[1:]:
-            st.image(similar_image, caption=f"Similarity: {sim_score:.4f}", use_column_width=True)
+    # Create rows dynamically
+    for i in range(0, len(similar_images[1:]), images_per_row):  # Skip the first image (itself)
+        cols = st.columns(images_per_row)  # Create columns for the row
+        for col, (similar_image, sim_score) in zip(cols, similar_images[1 + i:1 + i + images_per_row]):
+            with col:
+                st.image(similar_image, caption=f"Sim: {sim_score:.4f}", use_container_width=False)
