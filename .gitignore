@@ -1,0 +1,5 @@
+art-images-drawings-painting-sculpture-engraving/
+.vscode
+*.pkl
+*.npy
+*.pth
