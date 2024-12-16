@@ -41,7 +41,7 @@ def remove_duplicates(similar, feature_extractor, threshold=1e-6):
     sim_scores = []
     for i in similar:
         a, sim_score = i
-        feature = extract_features(a)  # Ensure it's compatible with your device
+        feature = extract_features(a, feature_extractor, device="cpu")  # Ensure it's compatible with your device
         if feature is not None:  # Only add valid features
             image_features.append(feature)
             image_paths.append(a)
@@ -71,7 +71,7 @@ def remove_duplicates(similar, feature_extractor, threshold=1e-6):
         results.append((i, z))  # Returning only paths and similarity scores
     return results
 # Extract features from an image
-def extract_features(image_path):
+def extract_features(image_path, feature_extractor, device="cpu"):
     try:
         img = Image.open(image_path).convert('RGB')
         img_tensor = transform(img).unsqueeze(0).to(device)
@@ -94,7 +94,7 @@ image_paths, image_features = load_data()
 # Find similar images
 @st.cache_data
 def find_similar_images(query_image_path, top_k=5):
-    query_features = extract_features(query_image_path)
+    query_features = extract_features(query_image_path,feature_extractor)
     if query_features is None:
         return []
     similarities = cosine_similarity([query_features], image_features)[0]
