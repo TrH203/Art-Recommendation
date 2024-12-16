@@ -50,7 +50,7 @@ def plot_image(image_path):
     plt.axis('off')  # Hide axes for a cleaner display
     plt.show()
 
-def get_sample(data, ammount = 0.05):
+def get_sample(data,labels, ammount = 0.05):
     # Calculate 10% of the array size
     sample_size = int(len(data) * ammount)
 
@@ -59,10 +59,10 @@ def get_sample(data, ammount = 0.05):
 
     # Select the elements corresponding to the random indices
     random_sample_data = data[random_indices]
-    # random_sample_label = labels[random_indices]
-    return random_sample_data
+    random_sample_label = labels[random_indices]
+    return random_sample_data, random_sample_label
     
-def kmeans(data, k, max_iters=200, tol=1e-3):
+def kmeans(data, k, max_iters=300, tol=1e-5):
 
     data = torch.tensor(data)
     n_samples, n_features = data.size()
@@ -87,6 +87,9 @@ def kmeans(data, k, max_iters=200, tol=1e-3):
 
 def plot_clusters_high_dim(data, labels, centers, n_components=2, title="K-Means Clustering"):
     
+    data, labels= get_sample(image_features,labels,0.2)
+    
+    
     data = torch.tensor(data)
     # Convert tensors to numpy
     data = data.cpu().numpy()
@@ -100,11 +103,9 @@ def plot_clusters_high_dim(data, labels, centers, n_components=2, title="K-Means
     reduced_data = pca.fit_transform(data)
     reduced_centers = pca.transform(centers)
 
-    # Plot the reduced data
-    # if n_components == 2:
     fig, ax = plt.subplots(figsize=(10, 7))  # Create a Matplotlib figure
 
-    for i in range(len(centers)):  # Assuming 3 clusters
+    for i in range(len(centers)): 
         cluster_points = reduced_data[labels == i]
         ax.scatter(
             cluster_points[:, 0], cluster_points[:, 1], label=f"Cluster {i + 1}"
@@ -129,7 +130,7 @@ def plot_clusters_high_dim(data, labels, centers, n_components=2, title="K-Means
 
     # Display the plot in Streamlit
     st.pyplot(fig)
-# elif n_components == 3:
+    
     # Create a DataFrame for visualization
     df = pd.DataFrame(reduced_data, columns=["PC1", "PC2", "PC3"])
     df['Cluster'] = labels
@@ -144,6 +145,7 @@ def plot_clusters_high_dim(data, labels, centers, n_components=2, title="K-Means
     st.title("Interactive 3D PCA Visualization")
     fig = px.scatter_3d(df, x="PC1", y="PC2", z="PC3",
                         color="Cluster", color_discrete_map=color_map)
+    
     fig.update_layout(width=1280, height=720)  # Set desired figure size
 
     st.plotly_chart(fig)
@@ -154,7 +156,6 @@ def plot_clusters_high_dim(data, labels, centers, n_components=2, title="K-Means
     
     
 logger.info("Loading features")
-# np.save("features.npy", image_features) # ! Danger Watch out
 image_features = np.load("features.npy")
 print("Image features: ", image_features.shape)
 
@@ -166,11 +167,16 @@ image_paths = []
 with open("image_paths.pkl", "rb") as f:
     image_paths = pickle.load(f)
 
-image_features = get_sample(image_features,0.2)
 
 logger.info("Clustering...")
 k = 5
 centers, labels = kmeans(image_features, k)
 # plot_3d_clusters(data, labels, centers)
 logger.info("Plotting...")
+plot_clusters_high_dim(image_features,labels, centers,n_components=3)
+
+
+k = 10
+centers, labels = kmeans(image_features, k)
+
 plot_clusters_high_dim(image_features,labels, centers,n_components=3)
