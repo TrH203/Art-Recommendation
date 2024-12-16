@@ -118,8 +118,8 @@ def advanced_recommendation(query_features, image_features, image_paths, liked_i
     top_similar_images = filtered_indices[:top_k]
     
     return [(image_paths[i], modified_similarities[i]) for i in top_similar_images]
-
-def remove_duplicates(similar, feature_extractor, threshold=1e-6):
+@st.cache_data
+def remove_duplicates(similar, _feature_extractor, threshold=1e-6):
     image_features = []
     image_paths = []
     sim_scores = []

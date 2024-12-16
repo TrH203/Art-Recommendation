@@ -25,6 +25,7 @@ def load_model():
     feature_extractor = nn.Sequential(*list(vgg19_model.features.children())).to(device)
     return feature_extractor
 
+
 feature_extractor = load_model()
 
 # Image preprocessing
@@ -34,8 +35,8 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-
-def remove_duplicates(similar, feature_extractor, threshold=1e-6):
+@st.cache_data
+def remove_duplicates(similar, _feature_extractor, threshold=1e-6):
     image_features = []
     image_paths = []
     sim_scores = []
@@ -101,6 +102,11 @@ def find_similar_images(query_image_path, top_k=5):
     sorted_indices = np.argsort(similarities)[::-1][1:top_k]  # Skip the query image
     return [(image_paths[i], similarities[i]) for i in sorted_indices]
 
+@st.cache_data
+def resize_image(image_path):
+    img = Image.open(image_path)
+    img_resized = img.resize((224, 224))  # Resize to 224x224
+    return img_resized
 # Streamlit UI
 st.title("Image Upload and Recommendation")
 
