@@ -7,6 +7,8 @@ import pickle
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+import io
+from tqdm import tqdm
 from loguru import logger
 
 # Title of the app
@@ -117,6 +119,42 @@ def advanced_recommendation(query_features, image_features, image_paths, liked_i
     
     return [(image_paths[i], modified_similarities[i]) for i in top_similar_images]
 
+def remove_duplicates(similar, feature_extractor, threshold=1e-6):
+    image_features = []
+    image_paths = []
+    sim_scores = []
+    for i in similar:
+        a, sim_score = i
+        feature = extract_features(a, feature_extractor, device="cpu")  # Ensure it's compatible with your device
+        if feature is not None:  # Only add valid features
+            image_features.append(feature)
+            image_paths.append(a)
+            sim_scores.append(sim_score)
+
+    image_features = np.array(image_features)
+    dup = {}
+    num_images = len(image_paths)
+    for i in tqdm(range(num_images)):
+        if image_paths[i] in dup:  # Skip if already flagged as duplicate
+            continue
+
+        # Compare current feature with the rest
+        differences = np.sum(np.abs(image_features[i] - image_features[i + 1:]), axis=1)
+        duplicates = np.where(differences <= threshold)[0]
+
+        for idx in duplicates:
+            dup[image_paths[i + 1 + idx]] = True
+
+    # Filter unique paths and features
+    new_paths = [path for path in image_paths if path not in dup]
+    new_image_features = [image_features[i] for i, path in enumerate(image_paths) if path not in dup]
+    new_sim_score = [sim_scores[i] for i, path in enumerate(image_paths) if path not in dup]
+
+    results = []
+    for i, j, z in zip(new_paths, new_image_features, new_sim_score):
+        results.append((i, z))  # Returning only paths and similarity scores
+    return results
+
 # Load model and feature extractor once
 vgg19_model, feature_extractor = load_model_and_feature_extractor("model.pth", device)
 
@@ -174,7 +212,7 @@ if avg_like_features is not None and avg_dislike_features is not None:
         st.session_state["dislike"], 
         top_k=100
     )
-    
+    similar_images = remove_duplicates(similar_images, feature_extractor, threshold=1e-6)
     # Display recommendations
     images_per_row = 5
     for i in range(0, len(similar_images), images_per_row):
@@ -183,7 +221,7 @@ if avg_like_features is not None and avg_dislike_features is not None:
             with col:
                 st.image(similar_image, caption=f"Sim: {sim_score:.4f}", use_container_width=True)
 
-                reacts = st.columns(2)
+                reacts = st.columns(3)
                 
                 # Like/Dislike buttons
                 with reacts[0]:
@@ -198,7 +236,19 @@ if avg_like_features is not None and avg_dislike_features is not None:
                             st.session_state["dislike"].append(similar_image)
                         if similar_image in st.session_state["like"]:
                             st.session_state["like"].remove(similar_image)
-                            
+                with reacts[2]:
+                    # Convert image to BytesIO stream for downloading
+                    image_download = Image.open(similar_image)
+                    img_byte_arr = io.BytesIO()
+                    image_download.save(img_byte_arr, format='PNG')
+                    img_byte_arr = img_byte_arr.getvalue()
+
+                    st.download_button(
+                        label="📥",
+                        data=img_byte_arr,
+                        file_name=similar_image.split("/")[-1],  # Use image name as file name
+                        mime="image/png"
+                    )
 else:
     st.warning("You haven't liked or disliked any images yet. Start interacting to see recommendations!")
 
@@ -212,10 +262,10 @@ with open("user_data.json", "w") as f:
     }, f)
 
 # Feedback summary
-st.markdown("### Feedback Summary")
-st.json({
-    "default": { 
-        "like": st.session_state["like"], 
-        "dislike": st.session_state["dislike"]
-    }
-})
+# st.markdown("### Feedback Summary")
+# st.json({
+#     "default": {
+#         "like": st.session_state["like"],
+#         "dislike": st.session_state["dislike"]
+#     }
+# })

@@ -8,7 +8,8 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 import json
-
+import io
+from tqdm import tqdm
 # Device configuration
 device = "cpu"
 
@@ -33,6 +34,42 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
+
+def remove_duplicates(similar, feature_extractor, threshold=1e-6):
+    image_features = []
+    image_paths = []
+    sim_scores = []
+    for i in similar:
+        a, sim_score = i
+        feature = extract_features(a)  # Ensure it's compatible with your device
+        if feature is not None:  # Only add valid features
+            image_features.append(feature)
+            image_paths.append(a)
+            sim_scores.append(sim_score)
+
+    image_features = np.array(image_features)
+    dup = {}
+    num_images = len(image_paths)
+    for i in tqdm(range(num_images)):
+        if image_paths[i] in dup:  # Skip if already flagged as duplicate
+            continue
+
+        # Compare current feature with the rest
+        differences = np.sum(np.abs(image_features[i] - image_features[i + 1:]), axis=1)
+        duplicates = np.where(differences <= threshold)[0]
+
+        for idx in duplicates:
+            dup[image_paths[i + 1 + idx]] = True
+
+    # Filter unique paths and features
+    new_paths = [path for path in image_paths if path not in dup]
+    new_image_features = [image_features[i] for i, path in enumerate(image_paths) if path not in dup]
+    new_sim_score = [sim_scores[i] for i, path in enumerate(image_paths) if path not in dup]
+
+    results = []
+    for i, j, z in zip(new_paths, new_image_features, new_sim_score):
+        results.append((i, z))  # Returning only paths and similarity scores
+    return results
 # Extract features from an image
 def extract_features(image_path):
     try:
@@ -95,7 +132,7 @@ if uploaded_image is not None:
     # Find similar images
     find_similar_images.clear()
     similar_images = find_similar_images(query_image_path, top_k=51)
-
+    similar_images = remove_duplicates(similar_images, feature_extractor, threshold=1e-6)
     # Display similar images
     st.markdown("### Similar Images")
     images_per_row = 5
@@ -106,7 +143,7 @@ if uploaded_image is not None:
             with col:
                 st.image(similar_image, caption=f"Sim: {sim_score:.4f}", use_container_width=True)
 
-                reacts = st.columns(2)
+                reacts = st.columns(3)
                 
                 # Like/Dislike buttons
                 
@@ -122,11 +159,23 @@ if uploaded_image is not None:
                             st.session_state["dislike"].append(similar_image)
                         if similar_image in st.session_state["like"]:
                             st.session_state["like"].remove(similar_image)
+                with reacts[2]:
+                    # Convert image to BytesIO stream for downloading
+                    image_download = Image.open(similar_image)
+                    img_byte_arr = io.BytesIO()
+                    image_download.save(img_byte_arr, format='PNG')
+                    img_byte_arr = img_byte_arr.getvalue()
 
+                    st.download_button(
+                        label="📥",
+                        data=img_byte_arr,
+                        file_name=similar_image.split("/")[-1],  # Use image name as file name
+                        mime="image/png"
+                    )
     # Save feedback
     with open(feedback_file, "w") as f:
         json.dump({"default": {"like": st.session_state["like"], "dislike": st.session_state["dislike"]}}, f)
 
     # Feedback summary
-    st.markdown("### Feedback Summary")
-    st.json({"default":{ "like": st.session_state["like"], "dislike": st.session_state["dislike"]}})
+    # st.markdown("### Feedback Summary")
+    # st.json({"default":{ "like": st.session_state["like"], "dislike": st.session_state["dislike"]}})
