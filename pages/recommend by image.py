@@ -71,14 +71,14 @@ st.title("Image Upload and Recommendation")
 feedback_file = "user_data.json"
 if not os.path.exists(feedback_file):
     with open(feedback_file, "w") as f:
-        json.dump({"like": [], "dislike": []}, f)
+        json.dump({"default": {"like": [], "dislike": []}}, f)
 
 # Load feedback
 if "like" not in st.session_state:
     with open(feedback_file, "r") as f:
         feedback_data = json.load(f)
-    st.session_state["like"] = feedback_data.get("like", [])
-    st.session_state["dislike"] = feedback_data.get("dislike", [])
+    st.session_state["like"] = feedback_data.get("default", []).get("like")
+    st.session_state["dislike"] = feedback_data.get("default", []).get("dislike")
 
 # Image upload widget
 uploaded_image = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
@@ -125,8 +125,8 @@ if uploaded_image is not None:
 
     # Save feedback
     with open(feedback_file, "w") as f:
-        json.dump({"like": st.session_state["like"], "dislike": st.session_state["dislike"]}, f)
+        json.dump({"default": {"like": st.session_state["like"], "dislike": st.session_state["dislike"]}}, f)
 
     # Feedback summary
     st.markdown("### Feedback Summary")
-    st.json({"like": st.session_state["like"], "dislike": st.session_state["dislike"]})
+    st.json({"default":{ "like": st.session_state["like"], "dislike": st.session_state["dislike"]}})
